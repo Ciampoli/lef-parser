@@ -11,7 +11,8 @@ class Statement:
     General class for all types of Statements in the LEF file
     """
 
-    def __init__(self):
+    def __init__(self, VerbLevel = 0):
+        self.VL = VerbLevel
         pass
 
     def parse_next(self, data):
@@ -23,7 +24,12 @@ class Statement:
         object that will be parsed next.
         """
         # the program assumes the syntax of LEF file is correct
-        if data[0] == "MACRO":
+        if data[0] == "PROPERTYDEFINITIONS":
+            if (self.VL>1):
+                print(data)
+            new_state = PropertyDef()
+            return new_state
+        elif data[0] == "MACRO":
             name = data[1]
             new_state = Macro(name)
             return new_state
@@ -45,7 +51,7 @@ class Statement:
         :return: string representation of Statement objects
         """
         s = ""
-        s += self.type + " " + self.name
+        s += self.type + " " + self.name + "\n"
         return s
 
 
@@ -72,12 +78,18 @@ class Macro(Statement):
         s = ""
         s += self.type + " " + self.name + "\n"
         for key in self.info:
+            # self.info[key] is either an object or a list of objects. 
             if key == "PIN":
-                s += "    " + key + ":\n"
+                s += "<" + key + "list:\n"
+                s += "-------------\n"
                 for pin in self.info[key]:
-                    s += "    " + str(pin) + "\n"
+                    # next calls directly the object string method.
+                    s += "<" + str(pin)+ ">\n"
+                    s += "------------- end of " + key + "list>\n"
             else:
-                s += "    " + key + ": " + str(self.info[key]) + "\n"
+                # next calls directly the object string method.
+                obj = self.info[key]
+                s += "<" + key + ": " + str(obj) + ">\n"
         return s
 
     def parse_next(self, data):
@@ -88,6 +100,12 @@ class Macro(Statement):
         :return: 0 if in progress, 1 if parsing is done, -1 if error,
         otherwise, return the object that will be parsed next.
         """
+        # select the 'arguments', or words following first word
+        bucket = data[1:] 
+        if len(bucket)>0:
+            # if last element is a ';' suppress it from words
+            if (bucket[-1] == ';'):
+                del bucket[-1]
         if data[0] == "CLASS":
             self.info["CLASS"] = data[1]
         elif data[0] == "ORIGIN":
@@ -95,13 +113,13 @@ class Macro(Statement):
             y_cor = float(data[2])
             self.info["ORIGIN"] = (x_cor, y_cor)
         elif data[0] == "FOREIGN":
-            self.info["FOREIGN"] = data[1:]
+            self.info["FOREIGN"] = bucket
         elif data[0] == "SIZE":
             width = float(data[1])
             height = float(data[3])
             self.info["SIZE"] = (width, height)
         elif data[0] == "SYMMETRY":
-            self.info["SYMMETRY"] = data[1:]
+            self.info["SYMMETRY"] = bucket
         elif data[0] == "SITE":
             self.info["SITE"] = data[1]
         elif data[0] == "PIN":
@@ -140,8 +158,15 @@ class Pin(Statement):
 
     def __str__(self):
         s = ""
-        for layer in self.info["PORT"].info["LAYER"]:
-            s += layer.type + " " + layer.name + "\n"
+        s += self.type + " " + self.name + "\n"
+        # Protect, in case object is dumped BEFORE being filled up 
+        for key in self.info.keys():
+            if (key == "PORT"):
+                s += key + ":"
+                s += '<' + str(self.info["PORT"]) + '>'
+            else:
+                s += key + ":" + self.info[key] + "\n"
+        
         return s
 
     def parse_next(self, data):
@@ -182,20 +207,31 @@ class Port(Statement):
         self.name = ""
         self.info = {}
 
+    def __str__(self):
+        s = ""
+        if "LAYER" in self.info.keys():
+            # it is a list so unfold it
+            for layer in self.info["LAYER"]:
+                s += layer.name + " "
+        return s
+
     def parse_next(self, data):
         if data[0] == "END":
             return 1
         elif data[0] == "LAYER":
             name = data[1]
             new_layerdef = LayerDef(data[1])
+            # LAYERDEF objects are concatenated in the list self.info["LAYER"]
             if "LAYER" in self.info:
                 self.info["LAYER"].append(new_layerdef)
             else:
                 self.info["LAYER"] = [new_layerdef]
         elif data[0] == "RECT":
-            # error if the self.info["LAYER"] does not exist
+            # attach the shape to last element of list of layerdefs
+            # TO DO: error if the self.info["LAYER"] does not exist
             self.info["LAYER"][-1].add_rect(data)
         elif data[0] == "POLYGON":
+            # attach the shape to last element of list of layerdefs
             self.info["LAYER"][-1].add_polygon(data)
         return 0
 
@@ -223,6 +259,7 @@ class Obs(Statement):
     """
 
     # Note: OBS statement does not have name
+    # it is kept with empty value 
     def __init__(self):
         Statement.__init__(self)
         self.type = "OBS"
@@ -231,8 +268,9 @@ class Obs(Statement):
 
     def __str__(self):
         s = ""
-        for layer in self.info["LAYER"]:
-            s += layer.type + " " + layer.name + "\n"
+        if "LAYER" in self.info.keys():
+            for layer in self.info["LAYER"]:
+                s += layer.name + " "
         return s
 
     def parse_next(self, data):
@@ -247,7 +285,8 @@ class Obs(Statement):
                 self.info["LAYER"] = [new_layerdef]
         elif data[0] == "RECT":
             # error if the self.info["LAYER"] does not exist
-            self.info["LAYER"][-1].add_rect(data) # [-1] means the latest layer
+            # [-1] means the latest layer
+            self.info["LAYER"][-1].add_rect(data)
         elif data[0] == "POLYGON":
             self.info["LAYER"][-1].add_polygon(data)
         return 0
@@ -267,6 +306,13 @@ class LayerDef:
         self.name = name
         self.shapes = []
 
+    def __str__(self):
+        s = ""
+        s += self.type + " " + self.name + "\n"
+        for item in self.shapes:
+            s += '<' + str(item) + '>'
+        return s
+        
     def add_rect(self, data):
         x0 = float(data[1])
         y0 = float(data[2])
@@ -295,8 +341,15 @@ class Rect:
     # Question: Do I really need a Rect class?
     def __init__(self, points):
         self.type = "RECT"
+        self.name = ''
         self.points = points
-
+    
+    def __str__(self):
+        s = ""
+        s += self.type + " " + self.name + "\n"
+        for item in self.points:
+            s += '<' + str(item) + ">"
+        return s
 
 class Polygon:
     """
@@ -304,6 +357,7 @@ class Polygon:
     """
     def __init__(self, points):
         self.type = "POLYGON"
+        self.name = ''
         self.points = points
 
 
@@ -396,5 +450,56 @@ class Via(Statement):
             self.layers[-1].add_rect(data) # [-1] means the latest layer
         elif data[0] == "POLYGON":
             self.layers.add_polygon(data)
+        return 0
+
+class PropertyDef(Statement):
+    """
+    Property  class represents a PROPERTY DEFINITION in the LEF file.
+    Currently only skipped
+    """
+
+    def __init__(self):
+        # initiate the Statement superclass
+        Statement.__init__(self)
+        self.type = 'PropertyDef'
+        self.name = 'PROPERTYDEFINITIONS'
+        # other info is stored in this dictionary
+        self.info = {}
+        # pin dictionary
+        self.pin_dict = {}
+
+    def __str__(self):
+        """
+        turn a statement object into string
+        :return: string representation of Statement objects
+        """
+        s = ""
+        s += self.type + " " + self.name + "\n"
+        for key in self.info:
+            if key == "PIN":
+                s += "    " + key + ":\n"
+                for pin in self.info[key]:
+                    s += "    " + str(pin) + "\n"
+            else:
+                s += "    " + key + ": " + str(self.info[key]) + "\n"
+        return s
+
+    def parse_next(self, data):
+        """
+        Method to add information from a statement from LEF file to a PropertyDef
+        object.
+        :param data: a list of strings that contains pieces of information
+        :return: 0 if in progress, 1 if parsing is done, -1 if error,
+        otherwise, return the object that will be parsed next.
+        """
+        if data[0] == "MACRO":
+            # Supposing two arguments follow, name and type
+            self.info["MACRO"] = data[1]
+            self.info["TYPE"] = data[2]
+        elif data[0] == "END":
+            if data[1] == self.name:
+                return 1
+            else:
+                return -1
         return 0
 

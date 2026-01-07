@@ -14,8 +14,9 @@ class LefParser:
     LefParser object will parse the LEF file and store information about the
     cell library.
     """
-    def __init__(self, lef_file):
+    def __init__(self, lef_file, VerbLevel = 0):
         self.lef_path = lef_file
+        self.VL = VerbLevel
         # dictionaries to map the definitions
         self.macro_dict = {}
         self.layer_dict = {}
@@ -38,7 +39,8 @@ class LefParser:
     def parse(self):
         # Now try using my data structure to parse
         # open the file and start reading
-        print ("Start parsing LEF file...")
+        if (self.VL):
+            print ("Start parsing LEF file:"+self.lef_path+"...")
         f = open(self.lef_path, "r")
         # the program will run until the end of file f
         for line in f:
@@ -46,14 +48,19 @@ class LefParser:
             if len(info) != 0:
                 # if info is a blank line, then move to next line
                 # check if the program is processing a statement
-                #print (info)
+                if (self.VL):
+                    print ('I : ', end='')
+                    print (info)
                 if len(self.stack) != 0:
                     curState = self.stack[len(self.stack) - 1]
                     nextState = curState.parse_next(info)
                 else:
-                    curState = Statement()
+                    curState = Statement(self.VL)
                     nextState = curState.parse_next(info)
                 # check the status return from parse_next function
+                if (self.VL>1):
+                    print ('ns : ',end='')
+                    print (nextState)
                 if nextState == 0:
                     # continue as normal
                     pass
@@ -78,7 +85,18 @@ class LefParser:
         f.close()
         # get the cell height of the library
         self.get_cell_height()
-        print ("Parsing LEF file done.")
+        if (self.VL):
+            print ("Parsing LEF file done.")
+            if (self.VL>1):
+                print ('---->M:' + str(self.macro_dict))
+                for key in self.macro_dict.keys():
+                    item = str(key) + ':' + str(self.macro_dict[key])
+                    print ('...key=' + item +'...')
+                print ('---->L:' + str(self.layer_dict))
+                for key in self.layer_dict.keys():
+                    item = str(key) + ':' + str(self.layer_dict[key])
+                    print ('...key=' + item +'...')
+                print ('---->V:' + str(self.via_dict))
 
 
 def draw_cells():
